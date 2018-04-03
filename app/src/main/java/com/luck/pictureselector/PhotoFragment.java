@@ -1,5 +1,6 @@
 package com.luck.pictureselector;
 
+import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.IdRes;
@@ -17,11 +18,9 @@ import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import com.luck.picture.lib.PictureSelector;
-import com.luck.picture.lib.compress.Luban;
 import com.luck.picture.lib.config.PictureConfig;
 import com.luck.picture.lib.config.PictureMimeType;
 import com.luck.picture.lib.entity.LocalMedia;
-import com.luck.picture.lib.tools.DebugUtil;
 import com.luck.pictureselector.adapter.GridImageAdapter;
 
 import java.util.ArrayList;
@@ -45,13 +44,12 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
     private int maxSelectNum = 9;
     private TextView tv_select_num;
     private ImageView left_back, minus, plus;
-    private RadioGroup rgb_crop, rgb_compress, rgb_style, rgb_photo_mode;
+    private RadioGroup rgb_crop, rgb_style, rgb_photo_mode;
     private int aspect_ratio_x, aspect_ratio_y;
     private CheckBox cb_voice, cb_choose_mode, cb_isCamera, cb_isGif,
             cb_preview_img, cb_preview_video, cb_crop, cb_compress,
             cb_mode, cb_hide, cb_crop_circular, cb_styleCrop, cb_showCropGrid,
             cb_showCropFrame, cb_preview_audio;
-    private int compressMode = PictureConfig.SYSTEM_COMPRESS_MODE;
     private int themeId;
     private int chooseMode = PictureMimeType.ofAll();
 
@@ -73,7 +71,6 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
         rgb_crop = (RadioGroup) rootView.findViewById(R.id.rgb_crop);
         rgb_style = (RadioGroup) rootView.findViewById(R.id.rgb_style);
         rgb_photo_mode = (RadioGroup) rootView.findViewById(R.id.rgb_photo_mode);
-        rgb_compress = (RadioGroup) rootView.findViewById(R.id.rgb_compress);
         cb_voice = (CheckBox) rootView.findViewById(R.id.cb_voice);
         cb_choose_mode = (CheckBox) rootView.findViewById(R.id.cb_choose_mode);
         cb_isCamera = (CheckBox) rootView.findViewById(R.id.cb_isCamera);
@@ -90,7 +87,6 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
         cb_hide = (CheckBox) rootView.findViewById(R.id.cb_hide);
         cb_crop_circular = (CheckBox) rootView.findViewById(R.id.cb_crop_circular);
         rgb_crop.setOnCheckedChangeListener(this);
-        rgb_compress.setOnCheckedChangeListener(this);
         rgb_style.setOnCheckedChangeListener(this);
         rgb_photo_mode.setOnCheckedChangeListener(this);
         recyclerView = (RecyclerView) rootView.findViewById(R.id.recycler);
@@ -116,7 +112,7 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
                 switch (mediaType) {
                     case 1:
                         // 预览图片
-                        PictureSelector.create(PhotoFragment.this).externalPicturePreview(position, selectList);
+                        PictureSelector.create(PhotoFragment.this).themeStyle(themeId).openExternalPreview(position, selectList);
                         break;
                     case 2:
                         // 预览视频
@@ -146,11 +142,9 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
                         .previewImage(cb_preview_img.isChecked())
                         .previewVideo(cb_preview_video.isChecked())
                         .enablePreviewAudio(cb_preview_audio.isChecked()) // 是否可播放音频
-                        .compressGrade(Luban.THIRD_GEAR)
                         .isCamera(cb_isCamera.isChecked())
                         .enableCrop(cb_crop.isChecked())
                         .compress(cb_compress.isChecked())
-                        .compressMode(compressMode)
                         .glideOverride(160, 160)
                         .previewEggs(true)
                         .withAspectRatio(aspect_ratio_x, aspect_ratio_y)
@@ -174,11 +168,9 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
                         .previewImage(cb_preview_img.isChecked())
                         .previewVideo(cb_preview_video.isChecked())
                         .enablePreviewAudio(cb_preview_audio.isChecked()) // 是否可播放音频
-                        .compressGrade(Luban.THIRD_GEAR)
                         .isCamera(cb_isCamera.isChecked())
                         .enableCrop(cb_crop.isChecked())
                         .compress(cb_compress.isChecked())
-                        .compressMode(compressMode)
                         .glideOverride(160, 160)
                         .withAspectRatio(aspect_ratio_x, aspect_ratio_y)
                         .hideBottomControls(cb_hide.isChecked() ? false : true)
@@ -197,14 +189,13 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode == getActivity().RESULT_OK) {
+        if (resultCode == Activity.RESULT_OK) {
             switch (requestCode) {
                 case PictureConfig.CHOOSE_REQUEST:
                     // 图片选择
                     selectList = PictureSelector.obtainMultipleResult(data);
                     adapter.setList(selectList);
                     adapter.notifyDataSetChanged();
-                    DebugUtil.i(TAG, "onActivityResult:" + selectList.size());
                     break;
             }
         }
@@ -294,12 +285,6 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
                 aspect_ratio_x = 16;
                 aspect_ratio_y = 9;
                 break;
-            case R.id.rb_compress_system:
-                compressMode = PictureConfig.SYSTEM_COMPRESS_MODE;
-                break;
-            case R.id.rb_compress_luban:
-                compressMode = PictureConfig.LUBAN_COMPRESS_MODE;
-                break;
             case R.id.rb_default_style:
                 themeId = R.style.picture_default_style;
                 break;
@@ -347,9 +332,6 @@ public class PhotoFragment extends Fragment implements View.OnClickListener,
                     cb_showCropFrame.setChecked(true);
                     cb_showCropGrid.setChecked(true);
                 }
-                break;
-            case R.id.cb_compress:
-                rgb_compress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
                 break;
         }
     }

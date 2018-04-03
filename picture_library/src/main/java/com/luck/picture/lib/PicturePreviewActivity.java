@@ -2,23 +2,17 @@ package com.luck.picture.lib;
 
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.annotation.Nullable;
-import android.support.v4.content.ContextCompat;
-import android.support.v4.view.PagerAdapter;
 import android.support.v4.view.ViewPager;
 import android.text.TextUtils;
-import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import com.bumptech.glide.Glide;
-import com.bumptech.glide.Priority;
-import com.bumptech.glide.load.engine.DiskCacheStrategy;
-import com.bumptech.glide.request.RequestOptions;
+import com.luck.picture.lib.adapter.SimpleFragmentAdapter;
 import com.luck.picture.lib.anim.OptAnimationLoader;
 import com.luck.picture.lib.config.PictureConfig;
 import com.luck.picture.lib.config.PictureMimeType;
@@ -28,11 +22,8 @@ import com.luck.picture.lib.observable.ImagesObservable;
 import com.luck.picture.lib.rxbus2.RxBus;
 import com.luck.picture.lib.rxbus2.Subscribe;
 import com.luck.picture.lib.rxbus2.ThreadMode;
-import com.luck.picture.lib.tools.AttrsUtils;
-import com.luck.picture.lib.tools.DebugUtil;
-import com.luck.picture.lib.tools.LightStatusBarUtils;
 import com.luck.picture.lib.tools.ScreenUtils;
-import com.luck.picture.lib.tools.ToolbarUtil;
+import com.luck.picture.lib.tools.ToastManage;
 import com.luck.picture.lib.tools.VoiceUtils;
 import com.luck.picture.lib.widget.PreviewViewPager;
 import com.yalantis.ucrop.UCrop;
@@ -43,9 +34,6 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-import uk.co.senab.photoview.PhotoView;
-import uk.co.senab.photoview.PhotoViewAttacher;
-
 /**
  * author：luck
  * project：PictureSelector
@@ -53,7 +41,8 @@ import uk.co.senab.photoview.PhotoViewAttacher;
  * email：893855882@qq.com
  * data：16/12/31
  */
-public class PicturePreviewActivity extends PictureBaseActivity implements View.OnClickListener, Animation.AnimationListener {
+public class PicturePreviewActivity extends PictureBaseActivity implements
+        View.OnClickListener, Animation.AnimationListener, SimpleFragmentAdapter.OnCallBackActivity {
     private ImageView picture_left_back;
     private TextView tv_img_num, tv_title, tv_ok;
     private PreviewViewPager viewPager;
@@ -67,19 +56,26 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
     private Animation animation;
     private boolean refresh;
     private int index;
-    private int preview_complete_textColor;
     private int screenWidth;
-    private LayoutInflater inflater;
+    private Handler mHandler;
 
-    //EventBus 3.0 回调
+    /**
+     * EventBus 3.0 回调
+     *
+     * @param obj
+     */
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void eventBus(EventEntity obj) {
         switch (obj.what) {
             case PictureConfig.CLOSE_PREVIEW_FLAG:
                 // 压缩完后关闭预览界面
                 dismissDialog();
-                finish();
-                overridePendingTransition(0, R.anim.a3);
+                mHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        onBackPressed();
+                    }
+                }, 150);
                 break;
         }
     }
@@ -91,12 +87,8 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         if (!RxBus.getDefault().isRegistered(this)) {
             RxBus.getDefault().register(this);
         }
-        inflater = LayoutInflater.from(this);
+        mHandler = new Handler();
         screenWidth = ScreenUtils.getScreenWidth(this);
-        int status_color = AttrsUtils.getTypeValueColor(this, R.attr.picture_status_color);
-        ToolbarUtil.setColorNoTranslucent(this, status_color);
-        preview_complete_textColor = AttrsUtils.getTypeValueColor(this, R.attr.picture_preview_textColor);
-        LightStatusBarUtils.setLightStatusBar(this, previewStatusFont);
         animation = OptAnimationLoader.loadAnimation(this, R.anim.modal_in);
         animation.setAnimationListener(this);
         picture_left_back = (ImageView) findViewById(R.id.picture_left_back);
@@ -110,10 +102,11 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         tv_img_num = (TextView) findViewById(R.id.tv_img_num);
         tv_title = (TextView) findViewById(R.id.picture_title);
         position = getIntent().getIntExtra(PictureConfig.EXTRA_POSITION, 0);
-        tv_ok.setText(numComplete ? getString(R.string.picture_done_front_num, 0, maxSelectNum)
+        tv_ok.setText(numComplete ? getString(R.string.picture_done_front_num,
+                0, config.selectionMode == PictureConfig.SINGLE ? 1 : config.maxSelectNum)
                 : getString(R.string.picture_please_select));
 
-        tv_img_num.setSelected(checkNumMode ? true : false);
+        tv_img_num.setSelected(config.checkNumMode ? true : false);
 
         selectImages = (List<LocalMedia>) getIntent().
                 getSerializableExtra(PictureConfig.EXTRA_SELECT_LIST);
@@ -138,7 +131,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
                         boolean toEqual = PictureMimeType.
                                 mimeToEqual(pictureType, image.getPictureType());
                         if (!toEqual) {
-                            showToast(getString(R.string.picture_rule));
+                            ToastManage.s(mContext,getString(R.string.picture_rule));
                             return;
                         }
                     }
@@ -152,17 +145,21 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
                         isChecked = false;
                         check.setSelected(false);
                     }
-                    if (selectImages.size() >= maxSelectNum && isChecked) {
-                        showToast(getString(R.string.picture_message_max_num, maxSelectNum));
+                    if (selectImages.size() >= config.maxSelectNum && isChecked) {
+                        ToastManage.s(mContext, getString(R.string.picture_message_max_num, config.maxSelectNum));
                         check.setSelected(false);
                         return;
                     }
                     if (isChecked) {
-                        VoiceUtils.playVoice(mContext, openClickSound);
+                        VoiceUtils.playVoice(mContext, config.openClickSound);
+                        // 如果是单选，则清空已选中的并刷新列表(作单一选择)
+                        if (config.selectionMode == PictureConfig.SINGLE) {
+                            singleRadioMediaImage();
+                        }
                         selectImages.add(image);
                         image.setNum(selectImages.size());
-                        if (checkNumMode) {
-                            check.setText(image.getNum() + "");
+                        if (config.checkNumMode) {
+                            check.setText(String.valueOf(image.getNum()));
                         }
                     } else {
                         for (LocalMedia media : selectImages) {
@@ -181,7 +178,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         viewPager.addOnPageChangeListener(new ViewPager.OnPageChangeListener() {
             @Override
             public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
-                isPreviewEggs(previewEggs, position, positionOffsetPixels);
+                isPreviewEggs(config.previewEggs, position, positionOffsetPixels);
             }
 
             @Override
@@ -190,8 +187,8 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
                 tv_title.setText(position + 1 + "/" + images.size());
                 LocalMedia media = images.get(position);
                 index = media.getPosition();
-                if (!previewEggs) {
-                    if (checkNumMode) {
+                if (!config.previewEggs) {
+                    if (config.checkNumMode) {
                         check.setText(media.getNum() + "");
                         notifyCheckChanged(media);
                     }
@@ -219,7 +216,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
                 if (positionOffsetPixels < screenWidth / 2) {
                     media = images.get(position);
                     check.setSelected(isSelected(media));
-                    if (checkNumMode) {
+                    if (config.checkNumMode) {
                         num = media.getNum();
                         check.setText(num + "");
                         notifyCheckChanged(media);
@@ -228,7 +225,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
                 } else {
                     media = images.get(position + 1);
                     check.setSelected(isSelected(media));
-                    if (checkNumMode) {
+                    if (config.checkNumMode) {
                         num = media.getNum();
                         check.setText(num + "");
                         notifyCheckChanged(media);
@@ -239,9 +236,26 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         }
     }
 
+    /**
+     * 单选图片
+     */
+    private void singleRadioMediaImage() {
+        if (selectImages != null
+                && selectImages.size() > 0) {
+            LocalMedia media = selectImages.get(0);
+            RxBus.getDefault()
+                    .post(new EventEntity(PictureConfig.UPDATE_FLAG,
+                            selectImages, media.getPosition()));
+            selectImages.clear();
+        }
+    }
+
+    /**
+     * 初始化ViewPage数据
+     */
     private void initViewPageAdapterData() {
         tv_title.setText(position + 1 + "/" + images.size());
-        adapter = new SimpleFragmentAdapter();
+        adapter = new SimpleFragmentAdapter(images, this, this);
         viewPager.setAdapter(adapter);
         viewPager.setCurrentItem(position);
         onSelectNumChange(false);
@@ -249,7 +263,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         if (images.size() > 0) {
             LocalMedia media = images.get(position);
             index = media.getPosition();
-            if (checkNumMode) {
+            if (config.checkNumMode) {
                 tv_img_num.setSelected(true);
                 check.setText(media.getNum() + "");
                 notifyCheckChanged(media);
@@ -261,7 +275,7 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
      * 选择按钮更新
      */
     private void notifyCheckChanged(LocalMedia imageBean) {
-        if (checkNumMode) {
+        if (config.checkNumMode) {
             check.setText("");
             for (LocalMedia media : selectImages) {
                 if (media.getPath().equals(imageBean.getPath())) {
@@ -319,23 +333,25 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         this.refresh = isRefresh;
         boolean enable = selectImages.size() != 0;
         if (enable) {
-            tv_ok.setTextColor(preview_complete_textColor);
+            tv_ok.setSelected(true);
             id_ll_ok.setEnabled(true);
             if (numComplete) {
-                tv_ok.setText(getString(R.string.picture_done_front_num, selectImages.size(), maxSelectNum));
+                tv_ok.setText(getString(R.string.picture_done_front_num, selectImages.size(),
+                        config.selectionMode == PictureConfig.SINGLE ? 1 : config.maxSelectNum));
             } else {
                 if (refresh) {
                     tv_img_num.startAnimation(animation);
                 }
                 tv_img_num.setVisibility(View.VISIBLE);
-                tv_img_num.setText(selectImages.size() + "");
+                tv_img_num.setText(String.valueOf(selectImages.size()));
                 tv_ok.setText(getString(R.string.picture_completed));
             }
         } else {
             id_ll_ok.setEnabled(false);
-            tv_ok.setTextColor(ContextCompat.getColor(this, R.color.tab_color_false));
+            tv_ok.setSelected(false);
             if (numComplete) {
-                tv_ok.setText(getString(R.string.picture_done_front_num, 0, maxSelectNum));
+                tv_ok.setText(getString(R.string.picture_done_front_num, 0,
+                        config.selectionMode == PictureConfig.SINGLE ? 1 : config.maxSelectNum));
             } else {
                 tv_img_num.setVisibility(View.INVISIBLE);
                 tv_ok.setText(getString(R.string.picture_please_select));
@@ -370,130 +386,51 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
     }
 
 
-    public class SimpleFragmentAdapter extends PagerAdapter {
-
-        @Override
-        public int getCount() {
-            return images.size();
-        }
-
-        @Override
-        public void destroyItem(ViewGroup container, int position, Object object) {
-            (container).removeView((View) object);
-        }
-
-        @Override
-        public boolean isViewFromObject(View view, Object object) {
-            return view == object;
-        }
-
-        @Override
-        public Object instantiateItem(ViewGroup container, int position) {
-            View contentView = inflater.inflate(R.layout.picture_image_preview, container, false);
-            final PhotoView imageView = (PhotoView) contentView.findViewById(R.id.preview_image);
-            ImageView iv_play = (ImageView) contentView.findViewById(R.id.iv_play);
-            LocalMedia media = images.get(position);
-            if (media != null) {
-                final String pictureType = media.getPictureType();
-                boolean eqVideo = pictureType.startsWith(PictureConfig.VIDEO);
-                iv_play.setVisibility(eqVideo ? View.VISIBLE : View.GONE);
-                final String path;
-                if (media.isCut() && !media.isCompressed()) {
-                    // 裁剪过
-                    path = media.getCutPath();
-                } else if (media.isCompressed() || (media.isCut() && media.isCompressed())) {
-                    // 压缩过,或者裁剪同时压缩过,以最终压缩过图片为准
-                    path = media.getCompressPath();
-                } else {
-                    path = media.getPath();
-                }
-                boolean isGif = PictureMimeType.isGif(pictureType);
-                // 压缩过的gif就不是gif了
-                if (isGif && !media.isCompressed()) {
-                    RequestOptions gifOptions = new RequestOptions()
-                            .override(480, 800)
-                            .priority(Priority.HIGH)
-                            .diskCacheStrategy(DiskCacheStrategy.NONE);
-                    Glide.with(PicturePreviewActivity.this)
-                            .asGif()
-                            .load(path)
-                            .apply(gifOptions)
-                            .into(imageView);
-                } else {
-                    RequestOptions options = new RequestOptions()
-                            .diskCacheStrategy(DiskCacheStrategy.ALL)
-                            .override(480, 800);
-                    Glide.with(PicturePreviewActivity.this)
-                            .asBitmap()
-                            .load(path)
-                            .apply(options)
-                            .into(imageView);
-                }
-                imageView.setOnViewTapListener(new PhotoViewAttacher.OnViewTapListener() {
-                    @Override
-                    public void onViewTap(View view, float x, float y) {
-                        finish();
-                        overridePendingTransition(0, R.anim.a3);
-                    }
-                });
-                iv_play.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        Bundle bundle = new Bundle();
-                        bundle.putString("video_path", path);
-                        startActivity(PictureVideoPlayActivity.class, bundle);
-                    }
-                });
-            }
-            (container).addView(contentView, 0);
-            return contentView;
-        }
-    }
-
-
     @Override
     public void onClick(View view) {
         int id = view.getId();
         if (id == R.id.picture_left_back) {
-            finish();
-            overridePendingTransition(0, R.anim.a3);
+            onBackPressed();
         }
         if (id == R.id.id_ll_ok) {
             // 如果设置了图片最小选择数量，则判断是否满足条件
             int size = selectImages.size();
-            String pictureType = selectImages.size() > 0 ? selectImages.get(0).getPictureType() : "";
-            if (minSelectNum > 0) {
-                if (size < minSelectNum && selectionMode == PictureConfig.MULTIPLE) {
+            LocalMedia image = selectImages.size() > 0 ? selectImages.get(0) : null;
+            String pictureType = image != null ? image.getPictureType() : "";
+            if (config.minSelectNum > 0) {
+                if (size < config.minSelectNum && config.selectionMode == PictureConfig.MULTIPLE) {
                     boolean eqImg = pictureType.startsWith(PictureConfig.IMAGE);
-                    String str = eqImg ? getString(R.string.picture_min_img_num, minSelectNum)
-                            : getString(R.string.picture_min_video_num, minSelectNum);
-                    showToast(str);
+                    String str = eqImg ? getString(R.string.picture_min_img_num, config.minSelectNum)
+                            : getString(R.string.picture_min_video_num, config.minSelectNum);
+                    ToastManage.s(mContext,str);
                     return;
                 }
             }
-            if (enableCrop && pictureType.startsWith(PictureConfig.IMAGE)
-                    && selectionMode == PictureConfig.MULTIPLE) {
-                // 是图片和选择压缩并且是多张，调用批量压缩
-                ArrayList<String> cuts = new ArrayList<>();
-                for (LocalMedia media : selectImages) {
-                    cuts.add(media.getPath());
+            if (config.enableCrop && pictureType.startsWith(PictureConfig.IMAGE)) {
+                if (config.selectionMode == PictureConfig.SINGLE) {
+                    originalPath = image.getPath();
+                    startCrop(originalPath);
+                } else {
+                    // 是图片和选择压缩并且是多张，调用批量压缩
+                    ArrayList<String> cuts = new ArrayList<>();
+                    for (LocalMedia media : selectImages) {
+                        cuts.add(media.getPath());
+                    }
+                    startCrop(cuts);
                 }
-                startCrop(cuts);
             } else {
                 onResult(selectImages);
             }
         }
     }
 
+    @Override
     public void onResult(List<LocalMedia> images) {
         RxBus.getDefault().post(new EventEntity(PictureConfig.PREVIEW_DATA_FLAG, images));
         // 如果开启了压缩，先不关闭此页面，PictureImageGridActivity压缩完在通知关闭
-        if (!isCompress) {
-            DebugUtil.i("**** not compress finish");
-            finish();
-            overridePendingTransition(0, R.anim.a3);
+        if (!config.isCompress) {
+            onBackPressed();
         } else {
-            DebugUtil.i("**** loading compress");
             showPleaseDialog();
         }
     }
@@ -508,19 +445,23 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
                             (Serializable) list));
                     finish();
                     break;
+                case UCrop.REQUEST_CROP:
+                    if (data != null) {
+                        setResult(RESULT_OK, data);
+                    }
+                    finish();
+                    break;
             }
         } else if (resultCode == UCrop.RESULT_ERROR) {
             Throwable throwable = (Throwable) data.getSerializableExtra(UCrop.EXTRA_ERROR);
-            showToast(throwable.getMessage());
+            ToastManage.s(mContext,throwable.getMessage());
         }
     }
 
 
     @Override
     public void onBackPressed() {
-        super.onBackPressed();
-        finish();
-        overridePendingTransition(0, R.anim.a3);
+        closeActivity();
     }
 
     @Override
@@ -529,9 +470,18 @@ public class PicturePreviewActivity extends PictureBaseActivity implements View.
         if (RxBus.getDefault().isRegistered(this)) {
             RxBus.getDefault().unregister(this);
         }
+        if (mHandler != null) {
+            mHandler.removeCallbacksAndMessages(null);
+            mHandler = null;
+        }
         if (animation != null) {
             animation.cancel();
             animation = null;
         }
+    }
+
+    @Override
+    public void onActivityBackPressed() {
+        onBackPressed();
     }
 }

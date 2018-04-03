@@ -50,31 +50,35 @@ public class PictureFileUtils {
 
     public static final String POSTFIX = ".JPEG";
     public static final String POST_VIDEO = ".mp4";
-    public static final String POST_AUDIO = ".mp3";
     public static final String APP_NAME = "PictureSelector";
     public static final String CAMERA_PATH = "/" + APP_NAME + "/CameraImage/";
-    public static final String CAMERA_AUDIO_PATH = "/" + APP_NAME + "/CameraAudio/";
     public static final String CROP_PATH = "/" + APP_NAME + "/CropImage/";
 
-    public static File createCameraFile(Context context, int type, String outputCameraPath) {
-        String path;
-        if (type == PictureConfig.TYPE_AUDIO) {
-            path = !TextUtils.isEmpty(outputCameraPath)
-                    ? outputCameraPath : CAMERA_AUDIO_PATH;
-        } else {
-            path = !TextUtils.isEmpty(outputCameraPath)
-                    ? outputCameraPath : CAMERA_PATH;
-        }
-        return type == PictureConfig.TYPE_AUDIO ?
-                createMediaFile(context, path, type) :
-                createMediaFile(context, path, type);
+    /**
+     * @param context
+     * @param type
+     * @param outputCameraPath
+     * @param format
+     * @return
+     */
+    public static File createCameraFile(Context context, int type, String outputCameraPath, String format) {
+        String path = !TextUtils.isEmpty(outputCameraPath)
+                ? outputCameraPath : CAMERA_PATH;
+
+        return createMediaFile(context, path, type, format);
     }
 
-    public static File createCropFile(Context context, int type) {
-        return createMediaFile(context, CROP_PATH, type);
+    /**
+     * @param context
+     * @param type
+     * @param format
+     * @return
+     */
+    public static File createCropFile(Context context, int type, String format) {
+        return createMediaFile(context, CROP_PATH, type, format);
     }
 
-    private static File createMediaFile(Context context, String parentPath, int type) {
+    private static File createMediaFile(Context context, String parentPath, int type, String format) {
         String state = Environment.getExternalStorageState();
         File rootDir = state.equals(Environment.MEDIA_MOUNTED) ?
                 Environment.getExternalStorageDirectory() : context.getCacheDir();
@@ -87,15 +91,14 @@ public class PictureFileUtils {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.CHINA).format(new Date());
         String fileName = APP_NAME + "_" + timeStamp + "";
         File tmpFile = null;
+        String suffixType;
         switch (type) {
             case PictureConfig.TYPE_IMAGE:
-                tmpFile = new File(folderDir, fileName + POSTFIX);
+                suffixType = TextUtils.isEmpty(format) ? POSTFIX : format;
+                tmpFile = new File(folderDir, fileName + suffixType);
                 break;
             case PictureConfig.TYPE_VIDEO:
                 tmpFile = new File(folderDir, fileName + POST_VIDEO);
-                break;
-            case PictureConfig.TYPE_AUDIO:
-                tmpFile = new File(folderDir, fileName + POST_AUDIO);
                 break;
         }
         return tmpFile;
@@ -303,8 +306,12 @@ public class PictureFileUtils {
             inputChannel.transferTo(0, inputChannel.size(), outputChannel);
             inputChannel.close();
         } finally {
-            if (inputChannel != null) inputChannel.close();
-            if (outputChannel != null) outputChannel.close();
+            if (inputChannel != null) {
+                inputChannel.close();
+            }
+            if (outputChannel != null) {
+                outputChannel.close();
+            }
         }
     }
 
@@ -314,9 +321,9 @@ public class PictureFileUtils {
      * will cause both files to become null.
      * Simply skipping this step if the paths are identical.
      */
-    public static void copyAudioFile(@NonNull String pathFrom, @NonNull String pathTo) throws IOException {
+    public static boolean copyAudioFile(@NonNull String pathFrom, @NonNull String pathTo) throws IOException {
         if (pathFrom.equalsIgnoreCase(pathTo)) {
-            return;
+            return false;
         }
 
         FileChannel outputChannel = null;
@@ -327,9 +334,14 @@ public class PictureFileUtils {
             inputChannel.transferTo(0, inputChannel.size(), outputChannel);
             inputChannel.close();
         } finally {
-            if (inputChannel != null) inputChannel.close();
-            if (outputChannel != null) outputChannel.close();
-            PictureFileUtils.deleteFile(pathFrom);
+            if (inputChannel != null) {
+                inputChannel.close();
+            }
+            if (outputChannel != null) {
+                outputChannel.close();
+            }
+            boolean success = PictureFileUtils.deleteFile(pathFrom);
+            return success;
         }
     }
 
@@ -470,8 +482,10 @@ public class PictureFileUtils {
             path = new File(rootDir.getAbsolutePath() + "/PictureSelector");
         }
         if (!path.exists())
-            // 若不存在，创建目录，可以在应用启动的时候创建
+        // 若不存在，创建目录，可以在应用启动的时候创建
+        {
             path.mkdirs();
+        }
 
         return path + "/" + filename;
     }
@@ -541,46 +555,110 @@ public class PictureFileUtils {
         if (cutDir != null) {
             File[] files = cutDir.listFiles();
             for (File file : files) {
-                if (file.isFile())
+                if (file.isFile()) {
                     file.delete();
+                }
             }
         }
 
         if (compressDir != null) {
             File[] files = compressDir.listFiles();
-            if (files != null)
+            if (files != null) {
                 for (File file : files) {
-                    if (file.isFile())
+                    if (file.isFile()) {
                         file.delete();
+                    }
                 }
+            }
         }
 
         if (lubanDir != null) {
             File[] files = lubanDir.listFiles();
-            if (files != null)
+            if (files != null) {
                 for (File file : files) {
-                    if (file.isFile())
+                    if (file.isFile()) {
                         file.delete();
+                    }
                 }
+            }
         }
-        DebugUtil.i(TAG, "Cache delete success!");
     }
+
+    /**
+     * set empty PictureSelector Cache
+     *
+     * @param mContext
+     */
+    public static void deleteExternalCacheDirFile(Context mContext) {
+
+        File cutDir = mContext.getExternalCacheDir();
+        File compressDir = new File(mContext.getExternalCacheDir() + "/picture_cache");
+        File lubanDir = new File(mContext.getExternalCacheDir() + "/luban_disk_cache");
+        if (cutDir != null) {
+            File[] files = cutDir.listFiles();
+            for (File file : files) {
+                if (file.isFile()) {
+                    file.delete();
+                }
+            }
+        }
+
+        if (compressDir != null) {
+            File[] files = compressDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isFile()) {
+                        file.delete();
+                    }
+                }
+            }
+        }
+
+        if (lubanDir != null) {
+            File[] files = lubanDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isFile()) {
+                        file.delete();
+                    }
+                }
+            }
+        }
+    }
+
 
     /**
      * delete file
      *
      * @param path
      */
-    public static void deleteFile(String path) {
+    public static boolean deleteFile(String path) {
         try {
             if (!TextUtils.isEmpty(path)) {
                 File file = new File(path);
                 if (file != null) {
-                    file.delete();
+                    return file.delete();
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
+            return false;
         }
+        return false;
+    }
+
+    /**
+     * @param context
+     * @return
+     */
+    public static String getDiskCacheDir(Context context) {
+        String cachePath = null;
+        if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())
+                || !Environment.isExternalStorageRemovable()) {
+            cachePath = context.getExternalCacheDir().getPath();
+        } else {
+            cachePath = context.getCacheDir().getPath();
+        }
+        return cachePath;
     }
 }

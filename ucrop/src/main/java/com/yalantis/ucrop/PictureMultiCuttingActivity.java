@@ -64,7 +64,7 @@ import java.util.Locale;
 public class PictureMultiCuttingActivity extends AppCompatActivity {
 
     public static final int DEFAULT_COMPRESS_QUALITY = 90;
-    public static final Bitmap.CompressFormat DEFAULT_COMPRESS_FORMAT = Bitmap.CompressFormat.JPEG;
+    public static final Bitmap.CompressFormat DEFAULT_COMPRESS_FORMAT = Bitmap.CompressFormat.PNG;
 
     public static final int NONE = 0;
     public static final int SCALE = 1;
@@ -115,7 +115,16 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
     private int mCompressQuality = DEFAULT_COMPRESS_QUALITY;
     private int[] mAllowedGestures = new int[]{SCALE, ROTATE, ALL};
     private List<CutInfo> cutInfos = new ArrayList<>();
+    /**
+     * 是否可拖动裁剪框
+     */
+    private boolean isDragFrame;
+
+    /**
+     * 图片是否可拖动或旋转
+     */
     private boolean scaleEnabled, rotateEnabled;
+
     private int cutIndex;
 
     @Override
@@ -217,10 +226,14 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
 
         if (inputUri != null && outputUri != null) {
             try {
-                boolean enable = FileUtils.isEnable(inputUri.getPath());
-
-                mGestureCropImageView.setRotateEnabled(enable ? false : rotateEnabled);
-                mGestureCropImageView.setScaleEnabled(enable ? false : scaleEnabled);
+                boolean isGif = FileUtils.isGif(inputUri.getPath());
+                if (isGif) {
+                    mGestureCropImageView.setRotateEnabled(false);
+                    mGestureCropImageView.setScaleEnabled(false);
+                } else {
+                    mGestureCropImageView.setRotateEnabled(rotateEnabled);
+                    mGestureCropImageView.setScaleEnabled(scaleEnabled);
+                }
                 mGestureCropImageView.setImageUri(inputUri, outputUri);
             } catch (Exception e) {
                 setResultError(e);
@@ -260,7 +273,8 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
         mGestureCropImageView.setImageToWrapCropBoundsAnimDuration(intent.getIntExtra(UCropMulti.Options.EXTRA_IMAGE_TO_CROP_BOUNDS_ANIM_DURATION, CropImageView.DEFAULT_IMAGE_TO_CROP_BOUNDS_ANIM_DURATION));
 
         // Overlay view options
-        mOverlayView.setFreestyleCropEnabled(intent.getBooleanExtra(UCropMulti.Options.EXTRA_FREE_STYLE_CROP, OverlayView.DEFAULT_FREESTYLE_CROP_MODE != OverlayView.FREESTYLE_CROP_MODE_DISABLE));
+        mOverlayView.setDragFrame(isDragFrame);
+        mOverlayView.setFreestyleCropEnabled(intent.getBooleanExtra(UCropMulti.Options.EXTRA_FREE_STYLE_CROP, false));
         circleDimmedLayer = intent.getBooleanExtra(UCropMulti.Options.EXTRA_CIRCLE_DIMMED_LAYER, OverlayView.DEFAULT_CIRCLE_DIMMED_LAYER);
         mOverlayView.setDimmedColor(intent.getIntExtra(UCropMulti.Options.EXTRA_DIMMED_LAYER_COLOR, getResources().getColor(R.color.ucrop_color_default_dimmed)));
         mOverlayView.setCircleDimmedLayer(circleDimmedLayer);
@@ -389,9 +403,9 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
         mOverlayView = mUCropView.getOverlayView();
         mGestureCropImageView.setTransformImageListener(mImageListener);
 
-        ((ImageView) findViewById(R.id.image_view_logo)).setColorFilter(mLogoColor, PorterDuff.Mode.SRC_ATOP);
-
-        findViewById(R.id.ucrop_frame).setBackgroundColor(mRootViewBackgroundColor);
+//        ((ImageView) findViewById(R.id.image_view_logo)).setColorFilter(mLogoColor, PorterDuff.Mode.SRC_ATOP);
+//
+//        findViewById(R.id.ucrop_frame).setBackgroundColor(mRootViewBackgroundColor);
     }
 
     private TransformImageView.TransformImageListener mImageListener = new TransformImageView.TransformImageListener() {
@@ -633,8 +647,8 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
     }
 
     private void setAllowedGestures(int tab) {
-        mGestureCropImageView.setScaleEnabled(mAllowedGestures[tab] == ALL || mAllowedGestures[tab] == SCALE);
-        mGestureCropImageView.setRotateEnabled(mAllowedGestures[tab] == ALL || mAllowedGestures[tab] == ROTATE);
+        //mGestureCropImageView.setScaleEnabled(mAllowedGestures[tab] == ALL || mAllowedGestures[tab] == SCALE);
+        //mGestureCropImageView.setRotateEnabled(mAllowedGestures[tab] == ALL || mAllowedGestures[tab] == ROTATE);
     }
 
     /**
@@ -706,10 +720,11 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
         Bundle extras = getIntent().getExtras();
         String path = cutInfos.get(cutIndex).getPath();
         boolean isHttp = FileUtils.isHttp(path);
+        String imgType = getLastImgType(path);
         Uri uri = isHttp ? Uri.parse(path) : Uri.fromFile(new File(path));
         extras.putParcelable(UCropMulti.EXTRA_INPUT_URI, uri);
         extras.putParcelable(UCropMulti.EXTRA_OUTPUT_URI,
-                Uri.fromFile(new File(getCacheDir(), System.currentTimeMillis() + ".jpg")));
+                Uri.fromFile(new File(getCacheDir(), System.currentTimeMillis() + imgType)));
         intent.putExtras(extras);
         setupViews(intent);
         setInitialState();
@@ -721,6 +736,40 @@ public class PictureMultiCuttingActivity extends AppCompatActivity {
         // 预览图 一页5个,裁剪到第6个的时候滚动到最新位置，不然预览图片看不到
         if (cutIndex >= 5) {
             recyclerView.scrollToPosition(cutIndex);
+        }
+    }
+
+    /**
+     * 获取图片后缀
+     *
+     * @param path
+     * @return
+     */
+    public static String getLastImgType(String path) {
+        try {
+            int index = path.lastIndexOf(".");
+            if (index > 0) {
+                String imageType = path.substring(index, path.length());
+                switch (imageType) {
+                    case ".png":
+                    case ".PNG":
+                    case ".jpg":
+                    case ".jpeg":
+                    case ".JPEG":
+                    case ".WEBP":
+                    case ".bmp":
+                    case ".BMP":
+                    case ".webp":
+                        return imageType;
+                    default:
+                        return ".png";
+                }
+            } else {
+                return ".png";
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ".png";
         }
     }
 
